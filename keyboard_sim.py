@@ -19,6 +19,7 @@ from timing import Profile, expand
 from Quartz import (
     CGEventCreateKeyboardEvent, CGEventKeyboardSetUnicodeString, CGEventPost,
     CGEventSetFlags, CGEventSourceCreate, CGEventSourceKeyState, kCGEventFlagMaskCommand,
+    kCGEventFlagMaskShift,
     kCGEventSourceStatePrivate, kCGHIDEventTap, kCGEventSourceStateCombinedSessionState,
 )
 
@@ -29,7 +30,7 @@ def esc_pressed():
     return CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, KEY_ESC)
 
 
-KEY_CMD = 55
+KEY_CMD, KEY_SHIFT, KEY_LEFT = 55, 56, 123
 
 
 class Keys:
@@ -67,7 +68,28 @@ class Keys:
         finally:
             self.release_all()
 
+    def clear_line(self):
+        """Remove everything left of the cursor on this line (auto-inserted indent).
+
+        Types a sentinel space first, so there is always something to the left;
+        then Cmd+Shift+Left selects back to the line start and Backspace deletes
+        the selection. Backspace over a non-empty selection can never join lines,
+        so this is safe whatever the editor inserted (nothing, or any indent).
+        Avoids Cmd+Delete, which means "delete line" in JetBrains editors.
+        """
+        self.type(" ")
+        cmd = kCGEventFlagMaskCommand
+        both = cmd | kCGEventFlagMaskShift
+        try:
+            self._post(KEY_CMD, True, flags=cmd)
+            self._post(KEY_SHIFT, True, flags=both)
+            self._tap(KEY_LEFT, flags=both)
+        finally:
+            self.release_all()
+        self._tap(KEY_DELETE)
+
     def release_all(self):
+        self._post(KEY_SHIFT, False, flags=0)
         self._post(KEY_CMD, False, flags=0)
 
 
@@ -91,8 +113,7 @@ def _sleep(d, stop):
 def run_actions(actions, wpm, jitter, typo_rate, stop, profile=None, log=None, rng=None):
     """Perform (kind, arg) actions with human-like timing (see timing.py).
 
-    kinds: char, enter, tab, indent (space), indent_tab, clear (Cmd+Delete: delete
-           to line start), fdel (forward delete), pause (planner hint, timing only)
+    kinds: char, enter, tab, indent (space), indent_tab, clear (wipe left of cursor on the line), fdel (forward delete), pause (planner hint, timing only)
     profile: timing.Profile for developer-style timing, or None for flat jittered timing.
     log: optional list; receives (seconds_since_start, kind) for every keystroke.
     """
@@ -100,7 +121,7 @@ def run_actions(actions, wpm, jitter, typo_rate, stop, profile=None, log=None, r
     kb = Keys()
     keys = {"enter": lambda a: kb.key(KEY_RETURN), "tab": lambda a: kb.key(KEY_TAB),
             "indent": lambda a: kb.type(" "), "indent_tab": lambda a: kb.key(KEY_TAB),
-            "clear": lambda a: kb.key(KEY_DELETE, cmd=True), "fdel": lambda a: kb.key(KEY_FWD_DELETE),
+            "clear": lambda a: kb.clear_line(), "fdel": lambda a: kb.key(KEY_FWD_DELETE),
             "bs": lambda a: kb.key(KEY_DELETE), "char": lambda a: kb.type(a)}
     t0 = time.monotonic()
     try:

@@ -6,8 +6,11 @@ closers. plan() turns source into an action list (see keyboard_sim.run_actions)
 that compensates:
 
 * auto_indent: after Enter the editor may have inserted indentation (copied from
-  the previous line, +1 level after ':' or an opening bracket). We predict that,
-  wipe it with Cmd+Delete, and type the exact indentation from the source.
+  the previous line, +1 level after ':' or an opening bracket, -1 after return/pass,
+  kept on blank lines...). Editors disagree, so we don't predict it: on every line we
+  wipe whatever is there ("clear": type a sentinel space, select to line start,
+  delete the selection - safe whatever the editor did) and type the exact
+  indentation from the source.
 * auto_close: when a line ends with brackets (or a triple quote) still open, the
   editor has already inserted their closers after the cursor. We forward-delete
   them before pressing Enter, so the closers we type later aren't duplicated.
@@ -109,7 +112,6 @@ def plan(source, lang=PYTHON, auto_indent=True, auto_close=True, use_tabs=False)
     lines = source.split("\n")
     actions = []
     stack, triple = [], None
-    editor_has_ws = False  # does the editor currently have auto-inserted indent on this line?
 
     for i, raw in enumerate(lines):
         stripped = raw.lstrip(" \t")
@@ -118,7 +120,7 @@ def plan(source, lang=PYTHON, auto_indent=True, auto_close=True, use_tabs=False)
         indent = len(lead) if content else 0
 
         # --- start of line: fix up indentation ---
-        if auto_indent and editor_has_ws:
+        if auto_indent:
             actions.append(("clear", None))
         if content:
             if use_tabs:
@@ -128,15 +130,11 @@ def plan(source, lang=PYTHON, auto_indent=True, auto_close=True, use_tabs=False)
                 actions += [("indent", None)] * indent
             actions += [("char", c) for c in content]
 
-        # --- end of line: bookkeeping + predict what the editor did ---
+        # --- end of line: bookkeeping ---
         code, new_triple, opened_triple = _scan(lang, lead + content, i, triple, stack)
         if auto_close:
             pending = sum(1 for _, ln in stack if ln == i) + (3 if opened_triple else 0)
             actions += [("fdel", None)] * pending
-        in_string = bool(triple or new_triple)
-        editor_has_ws = bool(content) and (
-            indent > 0 or (not in_string and (lang.opens_block(code) or (code != "" and code[-1] in OPEN)))
-        )
         triple = new_triple
 
         if i < len(lines) - 1:

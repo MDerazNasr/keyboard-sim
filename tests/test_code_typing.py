@@ -12,9 +12,9 @@ CLOSERS = set(PAIRS.values())
 
 
 class SimEditor:
-    def __init__(self, auto_indent, auto_close, width=4):
+    def __init__(self, auto_indent, auto_close, width=4, dedent=False, sticky=False):
         self.t, self.c = "", 0
-        self.ai, self.ac, self.w = auto_indent, auto_close, width
+        self.ai, self.ac, self.w, self.dedent, self.sticky = auto_indent, auto_close, width, dedent, sticky
 
     def line_start(self):
         return self.t.rfind("\n", 0, self.c) + 1
@@ -58,9 +58,14 @@ class SimEditor:
         ls = self.line_start()
         before = self.t[ls:self.c]
         indent = len(before) - len(before.lstrip(" "))
+        if self.sticky and before.strip() == "":   # blank line: keep the last code line's indent
+            prev = [l for l in self.t[:ls].split("\n") if l.strip()]
+            indent = len(prev[-1]) - len(prev[-1].lstrip(" ")) if prev else 0
         b = before.rstrip()
         opener = b != "" and b[-1] in "([{"
         extra = self.w if (b.endswith(":") or opener) else 0
+        if self.dedent and b.strip().split(" ")[0] in ("return", "pass", "break", "continue", "raise"):
+            indent = max(indent - self.w, 0)
         if not self.ai:
             indent, extra = 0, 0
         nxt = self.t[self.c:self.c + 1]
@@ -70,11 +75,12 @@ class SimEditor:
         else:
             self.ins("\n" + " " * (indent + extra))
 
-    def clear(self):  # Cmd+Delete
+    def clear(self):
+        """Sentinel space, select to line start, Backspace (never joins lines)."""
+        self.ins(" ")
         ls = self.line_start()
-        s = ls if self.c > ls else max(ls - 1, 0)  # at col 0 it eats the newline
-        self.t = self.t[:s] + self.t[self.c:]
-        self.c = s
+        self.t = self.t[:ls] + self.t[self.c:]
+        self.c = ls
 
     def fdel(self):
         self.t = self.t[:self.c] + self.t[self.c + 1:]
@@ -124,11 +130,11 @@ def normalized(src):
     return "\n".join(l.rstrip() for l in src.split("\n"))
 
 
-def check(src, want=None, **opts):
-    ed = SimEditor(opts["auto_indent"], opts["auto_close"])
+def check(src, want=None, width=4, dedent=False, sticky=False, **opts):
+    ed = SimEditor(opts["auto_indent"], opts["auto_close"], width, dedent, sticky)
     got = ed.run(plan(src, **opts))
     want = normalized(src) if want is None else want
-    assert got == want, f"{opts}\n--- got ---\n{got!r}\n--- want ---\n{want!r}"
+    assert got == want, f"{opts} width={width} dedent={dedent} sticky={sticky}\n--- got ---\n{got!r}\n--- want ---\n{want!r}"
 
 
 def to_tabs(src):
@@ -141,10 +147,13 @@ def to_tabs(src):
 
 for ai in (True, False):
     for ac in (True, False):
-        check(SAMPLE, auto_indent=ai, auto_close=ac)
-        # tab-indented source is typed as 4-space indentation
-        check(SAMPLE.replace("    ", "\t"), want=normalized(SAMPLE), auto_indent=ai, auto_close=ac)
-        # "use tabs" option converts 4-space indents to tab keypresses
+        for width in (2, 4, 8):
+            for dedent, sticky in ((False, False), (True, False), (False, True), (True, True)):
+                if not ai and (dedent or sticky):
+                    continue
+                check(SAMPLE, auto_indent=ai, auto_close=ac, width=width, dedent=dedent, sticky=sticky)
+                check(SAMPLE.replace("    ", "\t"), want=normalized(SAMPLE), auto_indent=ai,
+                      auto_close=ac, width=width, dedent=dedent, sticky=sticky)
         if not ai:  # (the simulated editor's auto-indent only knows spaces)
             check(SAMPLE, want=to_tabs(SAMPLE), auto_indent=ai, auto_close=ac, use_tabs=True)
 print("all simulated-editor checks passed")

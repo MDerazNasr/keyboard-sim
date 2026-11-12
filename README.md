@@ -58,3 +58,10 @@ Tick **Emulate developer timing** on the Code tab. Settings (editable like speed
 `python3 analyze_timing.py out.csv`, or `--simulate code.py` to compare flat vs developer timing offline.
 The timing model is my own heuristic; it has not been validated against any particular detector.
 Tests: `python3 tests/test_timing.py`.
+
+### How indentation is handled
+With **Editor auto-indents** on, every line starts by wiping whatever the editor inserted (types a
+sentinel space, Cmd+Shift+Left to select back to the line start, Backspace to delete the selection),
+then types the exact indentation from the source. It doesn't guess what the editor did, so it works
+whether the editor indents, dedents (after `return`/`pass`), keeps indent on blank lines, or uses a
+different indent width. It never uses Cmd+Delete (that deletes the whole line in JetBrains IDEs).
