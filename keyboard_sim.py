@@ -17,8 +17,8 @@ import time
 from code_typing import LANGUAGES, FormatError, format_source, plan
 from Quartz import (
     CGEventCreateKeyboardEvent, CGEventKeyboardSetUnicodeString, CGEventPost,
-    CGEventSetFlags, CGEventSourceKeyState, kCGEventFlagMaskCommand,
-    kCGHIDEventTap, kCGEventSourceStateCombinedSessionState,
+    CGEventSetFlags, CGEventSourceCreate, CGEventSourceKeyState, kCGEventFlagMaskCommand,
+    kCGEventSourceStatePrivate, kCGHIDEventTap, kCGEventSourceStateCombinedSessionState,
 )
 
 KEY_RETURN, KEY_TAB, KEY_DELETE, KEY_ESC, KEY_FWD_DELETE = 36, 48, 51, 53, 117
@@ -28,23 +28,46 @@ def esc_pressed():
     return CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, KEY_ESC)
 
 
+KEY_CMD = 55
+
+
 class Keys:
+    """Posts synthetic keystrokes. Every event gets its modifier flags set
+    explicitly (0 unless asked), so a modifier can never leak into later keys."""
+
+    def __init__(self):
+        self.src = CGEventSourceCreate(kCGEventSourceStatePrivate)
+
+    def _post(self, code, down, text=None, flags=0):
+        ev = CGEventCreateKeyboardEvent(self.src, code, down)
+        if text is not None:
+            CGEventKeyboardSetUnicodeString(ev, len(text), text)
+        CGEventSetFlags(ev, flags)
+        CGEventPost(kCGHIDEventTap, ev)
+        time.sleep(0.002)
+
     def _tap(self, code, text=None, flags=0):
-        for down in (True, False):
-            ev = CGEventCreateKeyboardEvent(None, code, down)
-            if text is not None:
-                CGEventKeyboardSetUnicodeString(ev, len(text), text)
-            if flags:
-                CGEventSetFlags(ev, flags)
-            CGEventPost(kCGHIDEventTap, ev)
-            time.sleep(0.002)
+        self._post(code, True, text, flags)
+        self._post(code, False, text, flags)
 
     def type(self, text):
         for c in text:
             self._tap(0, c)
 
     def key(self, code, cmd=False):
-        self._tap(code, flags=kCGEventFlagMaskCommand if cmd else 0)
+        if not cmd:
+            self._tap(code)
+            return
+        # Press the Command key itself, tap the key, then release Command.
+        flags = kCGEventFlagMaskCommand
+        try:
+            self._post(KEY_CMD, True, flags=flags)
+            self._tap(code, flags=flags)
+        finally:
+            self.release_all()
+
+    def release_all(self):
+        self._post(KEY_CMD, False, flags=0)
 
 
 def text_actions(text):
@@ -67,6 +90,13 @@ def run_actions(actions, wpm, jitter, typo_rate, stop):
     def pause(mult):
         time.sleep(max(base * mult * random.uniform(1 - jitter, 1 + jitter), 0.005))
 
+    try:
+        _run(kb, actions, base, pause, typo_rate, stop)
+    finally:
+        kb.release_all()
+
+
+def _run(kb, actions, base, pause, typo_rate, stop):
     for kind, arg in actions:
         if stop["flag"] or esc_pressed():
             stop["flag"] = True
