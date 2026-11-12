@@ -16,11 +16,20 @@ from dataclasses import dataclass
 
 @dataclass
 class Profile:
-    burstiness: float = 0.45      # sigma of log keystroke interval (0 = metronome)
-    think_chance: float = 0.30    # chance of a thinking pause at a line end (blocks/sections get more)
-    think_median: float = 1.5     # median thinking pause, seconds (lognormal)
-    think_max: float = 30.0       # cap on any thinking pause, seconds
-    revise_rate: float = 0.03     # chance per identifier of backspace-and-retype
+    burstiness: float = 0.5       # sigma of log keystroke interval (0 = metronome)
+    think_chance: float = 0.35    # chance of a thinking pause at a line end (blocks/sections get more)
+    think_median: float = 2.0     # median thinking pause, seconds (lognormal)
+    think_max: float = 45.0       # cap on any thinking pause, seconds
+    revise_rate: float = 0.04     # chance per identifier of backspace-and-retype
+
+
+# Starting points, not fitted to data. "Typical" == the Profile defaults.
+PRESETS = {
+    "Typical": Profile(),
+    "Fluent (fast, few pauses)": Profile(0.4, 0.2, 1.2, 20.0, 0.02),
+    "Careful (slow, thoughtful)": Profile(0.55, 0.5, 3.0, 60.0, 0.05),
+    "Hesitant (lots of revising)": Profile(0.6, 0.45, 2.5, 60.0, 0.10),
+}
 
 
 # multipliers on the per-character base interval

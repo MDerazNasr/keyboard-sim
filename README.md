@@ -47,6 +47,7 @@ Tick **Emulate developer timing** on the Code tab. Settings (editable like speed
 |---|---|
 | Burstiness (0–1.5) | spread of keystroke speed; typing also runs in fast/slow bursts |
 | Think chance (0–1) | chance of a thinking pause at a line end (more likely after `:` blocks and blank lines) |
+| Preset | starting points (Typical is the default); not fitted to data |
 | Think median (s) / max (s) | typical / longest pause (lognormal) |
 | Revise rate (0–0.2) | chance per identifier of backspace-and-retype |
 

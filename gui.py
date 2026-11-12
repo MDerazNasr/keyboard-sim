@@ -8,7 +8,7 @@ from tkinter import ttk
 
 from code_typing import LANGUAGES, FormatError, format_source, plan
 from keyboard_sim import esc_pressed, run_actions, text_actions, write_log
-from timing import Profile
+from timing import PRESETS, Profile
 
 CODE_HINT = (
     "Click into an empty line at column 0 first. Turn off your editor's autocomplete "
@@ -59,13 +59,18 @@ class App:
         # developer-style timing (Code tab only)
         dev = ttk.LabelFrame(code_tab, text="Developer timing")
         dev.pack(fill="x", padx=6, pady=(4, 0))
-        self.dev_on = tk.BooleanVar(value=False)
+        self.dev_on = tk.BooleanVar(value=True)
         self.record = tk.BooleanVar(value=False)
         ttk.Checkbutton(dev, text="Emulate developer timing", variable=self.dev_on).grid(
             row=0, column=0, columnspan=3, sticky="w", padx=4)
         ttk.Checkbutton(dev, text="Record timing log (CSV)", variable=self.record).grid(
             row=0, column=3, columnspan=2, sticky="w", padx=4)
         self.dev_vars = {}
+        self.preset = tk.StringVar(value="Typical")
+        ttk.Label(dev, text="Preset:").grid(row=3, column=0, sticky="w", padx=4, pady=(0, 4))
+        box = ttk.Combobox(dev, textvariable=self.preset, values=list(PRESETS), state="readonly", width=28)
+        box.grid(row=3, column=1, columnspan=3, sticky="w", padx=4, pady=(0, 4))
+        box.bind("<<ComboboxSelected>>", self.apply_preset)
         for i, (key, label, default, lo, hi, inc) in enumerate([
             ("burstiness", "Burstiness (0-1.5)", Profile.burstiness, 0, 1.5, 0.05),
             ("think_chance", "Think chance (0-1)", Profile.think_chance, 0, 1, 0.05),
@@ -107,6 +112,11 @@ class App:
 
         self.poll_esc()
         root.protocol("WM_DELETE_WINDOW", self.close)
+
+    def apply_preset(self, _event=None):
+        p = PRESETS[self.preset.get()]
+        for key, var in self.dev_vars.items():
+            var.set(getattr(p, key))
 
     def poll_esc(self):
         if self.running and esc_pressed():
