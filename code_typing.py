@@ -140,5 +140,7 @@ def plan(source, lang=PYTHON, auto_indent=True, auto_close=True, use_tabs=False)
         triple = new_triple
 
         if i < len(lines) - 1:
+            # timing hint: where a developer would pause to think (ignored by flat timing)
+            actions.append(("pause", "section" if not content else "block" if lang.opens_block(code) else "line"))
             actions.append(("enter", None))
     return actions

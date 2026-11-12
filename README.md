@@ -38,3 +38,22 @@ CLI: `python3 keyboard_sim.py --code Python -f script.py` (`--no-auto-indent`, `
 More languages: add a `Language` entry to `LANGUAGES` in `code_typing.py`.
 
 Tests: `python3 tests/test_code_typing.py` (replays the plan against a *simulated* editor).
+
+## Developer timing (Code tab) — for generating/evaluating test sessions
+
+Tick **Emulate developer timing** on the Code tab. Settings (editable like speed/countdown):
+
+| Setting | Meaning |
+|---|---|
+| Burstiness (0–1.5) | spread of keystroke speed; typing also runs in fast/slow bursts |
+| Think chance (0–1) | chance of a thinking pause at a line end (more likely after `:` blocks and blank lines) |
+| Think median (s) / max (s) | typical / longest pause (lognormal) |
+| Revise rate (0–0.2) | chance per identifier of backspace-and-retype |
+
+**Record timing log** saves a keystroke CSV to `logs/`. CLI: `--code Python --dev-timing --log out.csv`
+(plus `--burstiness`, `--think-chance`, `--think-median`, `--think-max`, `--revise-rate`).
+
+`analyze_timing.py` computes log-IAT features (drops >5 min and zero gaps, log transform, L-scale λ₂):
+`python3 analyze_timing.py out.csv`, or `--simulate code.py` to compare flat vs developer timing offline.
+The timing model is my own heuristic; it has not been validated against any particular detector.
+Tests: `python3 tests/test_timing.py`.

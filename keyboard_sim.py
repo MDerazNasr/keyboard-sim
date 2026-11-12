@@ -15,6 +15,7 @@ import sys
 import time
 
 from code_typing import LANGUAGES, FormatError, format_source, plan
+from timing import Profile, expand
 from Quartz import (
     CGEventCreateKeyboardEvent, CGEventKeyboardSetUnicodeString, CGEventPost,
     CGEventSetFlags, CGEventSourceCreate, CGEventSourceKeyState, kCGEventFlagMaskCommand,
@@ -78,60 +79,58 @@ def text_actions(text):
     return out
 
 
-def run_actions(actions, wpm, jitter, typo_rate, stop):
-    """Perform (kind, arg) actions with human-like timing.
+def _sleep(d, stop):
+    """Sleep d seconds in small slices so Esc/Stop interrupts long pauses."""
+    end = time.monotonic() + d
+    while (left := end - time.monotonic()) > 0:
+        if stop["flag"] or esc_pressed():
+            return
+        time.sleep(min(left, 0.05))
 
-    kinds: char, enter, tab, indent (space), indent_tab (fast),
-           clear (Cmd+Delete: delete to line start), fdel (forward delete)
+
+def run_actions(actions, wpm, jitter, typo_rate, stop, profile=None, log=None, rng=None):
+    """Perform (kind, arg) actions with human-like timing (see timing.py).
+
+    kinds: char, enter, tab, indent (space), indent_tab, clear (Cmd+Delete: delete
+           to line start), fdel (forward delete), pause (planner hint, timing only)
+    profile: timing.Profile for developer-style timing, or None for flat jittered timing.
+    log: optional list; receives (seconds_since_start, kind) for every keystroke.
     """
+    steps = expand(actions, wpm, jitter, typo_rate, profile, rng)
     kb = Keys()
-    base = 60.0 / (wpm * 5)  # seconds per character
-
-    def pause(mult):
-        time.sleep(max(base * mult * random.uniform(1 - jitter, 1 + jitter), 0.005))
-
+    keys = {"enter": lambda a: kb.key(KEY_RETURN), "tab": lambda a: kb.key(KEY_TAB),
+            "indent": lambda a: kb.type(" "), "indent_tab": lambda a: kb.key(KEY_TAB),
+            "clear": lambda a: kb.key(KEY_DELETE, cmd=True), "fdel": lambda a: kb.key(KEY_FWD_DELETE),
+            "bs": lambda a: kb.key(KEY_DELETE), "char": lambda a: kb.type(a)}
+    t0 = time.monotonic()
     try:
-        _run(kb, actions, base, pause, typo_rate, stop)
+        for kind, arg, delay in steps:
+            if stop["flag"] or esc_pressed():
+                stop["flag"] = True
+                print("\nStopped.")
+                return
+            if kind in keys:
+                keys[kind](arg)
+                if log is not None:
+                    log.append((time.monotonic() - t0, kind))
+            _sleep(delay, stop)
     finally:
         kb.release_all()
 
 
-def _run(kb, actions, base, pause, typo_rate, stop):
-    for kind, arg in actions:
-        if stop["flag"] or esc_pressed():
-            stop["flag"] = True
-            print("\nStopped.")
-            return
-        if kind == "char":
-            if typo_rate and arg.isalpha() and random.random() < typo_rate:
-                kb.type(random.choice("abcdefghijklmnopqrstuvwxyz"))
-                time.sleep(base * random.uniform(1.5, 3))
-                kb.key(KEY_DELETE)
-                time.sleep(base * random.uniform(0.5, 1.5))
-            kb.type(arg)
-            pause(3 if arg in ".!?" else 1.4 if arg in ",;: " else 1)
-        elif kind == "enter":
-            kb.key(KEY_RETURN)
-            pause(3)
-        elif kind == "tab":
-            kb.key(KEY_TAB)
-            pause(1)
-        elif kind == "indent":
-            kb.type(" ")
-            pause(0.25)
-        elif kind == "indent_tab":
-            kb.key(KEY_TAB)
-            pause(0.25)
-        elif kind == "clear":
-            kb.key(KEY_DELETE, cmd=True)
-            pause(1.5)
-        elif kind == "fdel":
-            kb.key(KEY_FWD_DELETE)
-            pause(0.5)
-
-
 def type_text(text, wpm, jitter, typo_rate, stop):
     run_actions(text_actions(text), wpm, jitter, typo_rate, stop)
+
+
+def write_log(log, path):
+    """Write a keystroke timing log as CSV (t_seconds,kind)."""
+    import csv
+    import os
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["t_seconds", "kind"])
+        w.writerows((f"{t:.4f}", k) for t, k in log)
 
 
 def main():
@@ -143,6 +142,13 @@ def main():
     p.add_argument("--no-auto-indent", action="store_true", help="code mode: editor does NOT auto-indent")
     p.add_argument("--no-auto-close", action="store_true", help="code mode: editor does NOT auto-close brackets/quotes")
     p.add_argument("--format", action="store_true", help="code mode: format the code (black for Python) before typing")
+    p.add_argument("--dev-timing", action="store_true", help="code mode: developer-style timing (bursts, thinking pauses, revisions)")
+    p.add_argument("--burstiness", type=float, default=Profile.burstiness, help="dev timing: 0-1.5 keystroke-speed variation")
+    p.add_argument("--think-chance", type=float, default=Profile.think_chance, help="dev timing: chance of a pause at a line end (0-1)")
+    p.add_argument("--think-median", type=float, default=Profile.think_median, help="dev timing: median thinking pause, seconds")
+    p.add_argument("--think-max", type=float, default=Profile.think_max, help="dev timing: longest pause, seconds")
+    p.add_argument("--revise-rate", type=float, default=Profile.revise_rate, help="dev timing: chance per identifier of backspace-and-retype")
+    p.add_argument("--log", metavar="CSV", help="write a keystroke timing log to this CSV file")
     p.add_argument("--tabs", action="store_true", help="code mode: indent with tabs instead of spaces")
     p.add_argument("-d", "--delay", type=float, default=5, help="seconds to wait before typing (default 5)")
     p.add_argument("--wpm", type=float, default=80, help="typing speed in words/min (default 80)")
@@ -165,6 +171,11 @@ def main():
         print(f"Typing in {i}... (click where the text should go; Esc aborts)", end="\r", flush=True)
         time.sleep(1)
     print(" " * 70, end="\r")
+    profile = None
+    if a.dev_timing:
+        if not a.code:
+            p.error("--dev-timing requires --code")
+        profile = Profile(a.burstiness, a.think_chance, a.think_median, a.think_max, a.revise_rate)
     if a.code:
         if a.format:
             try:
@@ -174,7 +185,11 @@ def main():
         actions = plan(text, LANGUAGES[a.code], not a.no_auto_indent, not a.no_auto_close, a.tabs)
     else:
         actions = text_actions(text)
-    run_actions(actions, a.wpm, a.jitter, a.typos, stop)
+    log = [] if a.log else None
+    run_actions(actions, a.wpm, a.jitter, a.typos, stop, profile, log)
+    if a.log:
+        write_log(log, a.log)
+        print(f"Timing log: {a.log}")
     print("Done.")
 
 
