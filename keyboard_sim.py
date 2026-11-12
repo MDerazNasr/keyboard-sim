@@ -14,7 +14,7 @@ import random
 import sys
 import time
 
-from code_typing import LANGUAGES, plan
+from code_typing import LANGUAGES, FormatError, format_source, plan
 from Quartz import (
     CGEventCreateKeyboardEvent, CGEventKeyboardSetUnicodeString, CGEventPost,
     CGEventSetFlags, CGEventSourceKeyState, kCGEventFlagMaskCommand,
@@ -112,6 +112,7 @@ def main():
     p.add_argument("--code", choices=list(LANGUAGES), help="type as source code in this language (handles indentation/auto-close)")
     p.add_argument("--no-auto-indent", action="store_true", help="code mode: editor does NOT auto-indent")
     p.add_argument("--no-auto-close", action="store_true", help="code mode: editor does NOT auto-close brackets/quotes")
+    p.add_argument("--format", action="store_true", help="code mode: format the code (black for Python) before typing")
     p.add_argument("--tabs", action="store_true", help="code mode: indent with tabs instead of spaces")
     p.add_argument("-d", "--delay", type=float, default=5, help="seconds to wait before typing (default 5)")
     p.add_argument("--wpm", type=float, default=80, help="typing speed in words/min (default 80)")
@@ -135,6 +136,11 @@ def main():
         time.sleep(1)
     print(" " * 70, end="\r")
     if a.code:
+        if a.format:
+            try:
+                text = format_source(text, LANGUAGES[a.code])
+            except FormatError as e:
+                sys.exit(str(e))
         actions = plan(text, LANGUAGES[a.code], not a.no_auto_indent, not a.no_auto_close, a.tabs)
     else:
         actions = text_actions(text)

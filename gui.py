@@ -5,7 +5,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
-from code_typing import LANGUAGES, plan
+from code_typing import LANGUAGES, FormatError, format_source, plan
 from keyboard_sim import esc_pressed, run_actions, text_actions
 
 CODE_HINT = (
@@ -45,12 +45,15 @@ class App:
         self.auto_indent = tk.BooleanVar(value=True)
         self.auto_close = tk.BooleanVar(value=True)
         self.use_tabs = tk.BooleanVar(value=False)
+        self.format = tk.BooleanVar(value=False)
         checks = ttk.Frame(code_tab)
         checks.pack(fill="x", padx=6)
         ttk.Checkbutton(checks, text="Editor auto-indents", variable=self.auto_indent).pack(side="left")
         ttk.Checkbutton(checks, text="Editor auto-closes brackets/quotes",
                         variable=self.auto_close).pack(side="left", padx=10)
         ttk.Checkbutton(checks, text="Indent with tabs", variable=self.use_tabs).pack(side="left")
+        ttk.Checkbutton(code_tab, text="Format code before typing (black for Python)",
+                        variable=self.format).pack(anchor="w", padx=6)
         ttk.Label(code_tab, text=CODE_HINT, wraplength=560, foreground="gray").pack(anchor="w", padx=6, pady=2)
         self.code = tk.Text(code_tab, wrap="none", height=14, font=("Menlo", 12), undo=True)
         self.code.pack(fill="both", expand=True, padx=6, pady=6)
@@ -110,7 +113,14 @@ class App:
             self.status.set("Check the number fields.")
             return
         if in_code:
-            actions = plan(source, LANGUAGES[self.lang.get()], self.auto_indent.get(),
+            lang = LANGUAGES[self.lang.get()]
+            if self.format.get():
+                try:
+                    source = format_source(source, lang)
+                except FormatError as e:
+                    self.status.set(str(e))
+                    return
+            actions = plan(source, lang, self.auto_indent.get(),
                            self.auto_close.get(), self.use_tabs.get())
         else:
             actions = text_actions(source)

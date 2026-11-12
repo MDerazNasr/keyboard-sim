@@ -31,9 +31,26 @@ class Language:
     quotes: str = "'\""
     triple_quotes: bool = False
     opens_block: Callable[[str], bool] = lambda code: False   # line (sans comment) starts an indented block
+    formatter: Callable[[str], str] = None    # source -> formatted source; raises FormatError
 
 
-PYTHON = Language("Python", "#", triple_quotes=True, opens_block=lambda code: code.endswith(":"))
+class FormatError(Exception):
+    pass
+
+
+def _format_python(source):
+    try:
+        import black
+    except ImportError:
+        raise FormatError("black isn't installed (pip install black)")
+    try:
+        return black.format_str(source, mode=black.Mode())
+    except Exception as e:  # black.InvalidInput, etc.
+        raise FormatError(f"Can't format (is the code valid Python?): {e}")
+
+
+PYTHON = Language("Python", "#", triple_quotes=True, opens_block=lambda code: code.endswith(":"),
+                  formatter=_format_python)
 LANGUAGES = {"Python": PYTHON}
 
 
@@ -78,6 +95,13 @@ def _scan(lang, line, line_no, triple, stack):
             stack.pop()
         i += 1
     return line[:end].rstrip(), triple, opened_triple
+
+
+def format_source(source, lang=PYTHON):
+    """Run the language's formatter; raises FormatError if it can't."""
+    if lang.formatter is None:
+        raise FormatError(f"No formatter available for {lang.name}")
+    return lang.formatter(source)
 
 
 def plan(source, lang=PYTHON, auto_indent=True, auto_close=True, use_tabs=False):

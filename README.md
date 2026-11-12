@@ -24,13 +24,16 @@ typing code verbatim produces doubled indentation and stray `)`. Code mode compe
   (Cmd+Delete) and types the exact indentation from your source.
 - **Editor auto-closes brackets/quotes** — if a line ends with brackets (or a `"""`) still open,
   it forward-deletes the editor's auto-inserted closers before pressing Enter.
+- **Format code before typing** — runs the code through `black` (Python) first. Fixes messy style
+  (spacing, line wrapping, odd indent widths), but the code must be valid Python; if it isn't, you get
+  an error and nothing is typed. It can't restore indentation that was lost entirely.
 - **Indent with tabs** — types Tab for each 4 spaces of indentation.
 
 Tips: click into an empty line at column 0 first; turn off autocomplete suggestions in your editor
 (Enter would accept a suggestion); uncheck the boxes for plain editors that don't auto-indent/close.
 Source indented with tabs is typed as 4-space indents. Trailing whitespace is dropped.
 
-CLI: `python3 keyboard_sim.py --code Python -f script.py` (`--no-auto-indent`, `--no-auto-close`, `--tabs`).
+CLI: `python3 keyboard_sim.py --code Python -f script.py` (`--no-auto-indent`, `--no-auto-close`, `--tabs`, `--format`).
 
 More languages: add a `Language` entry to `LANGUAGES` in `code_typing.py`.
 
