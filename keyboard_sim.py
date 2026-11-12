@@ -7,20 +7,21 @@ Usage:
     pbpaste | python3 keyboard_sim.py
 
 Workflow: run it, then click where you want the text to go. After the
-countdown it starts typing. Press
-Ctrl+C in the terminal to abort or press Esc.
+countdown it starts typing. Press Ctrl+C in the terminal or Esc to abort.
 """
 import argparse
 import random
 import sys
 import time
 
+from code_typing import LANGUAGES, plan
 from Quartz import (
     CGEventCreateKeyboardEvent, CGEventKeyboardSetUnicodeString, CGEventPost,
-    CGEventSourceKeyState, kCGHIDEventTap, kCGEventSourceStateCombinedSessionState,
+    CGEventSetFlags, CGEventSourceKeyState, kCGEventFlagMaskCommand,
+    kCGHIDEventTap, kCGEventSourceStateCombinedSessionState,
 )
 
-KEY_RETURN, KEY_TAB, KEY_DELETE, KEY_ESC = 36, 48, 51, 53
+KEY_RETURN, KEY_TAB, KEY_DELETE, KEY_ESC, KEY_FWD_DELETE = 36, 48, 51, 53, 117
 
 
 def esc_pressed():
@@ -28,11 +29,13 @@ def esc_pressed():
 
 
 class Keys:
-    def _tap(self, code, text=None):
+    def _tap(self, code, text=None, flags=0):
         for down in (True, False):
             ev = CGEventCreateKeyboardEvent(None, code, down)
             if text is not None:
                 CGEventKeyboardSetUnicodeString(ev, len(text), text)
+            if flags:
+                CGEventSetFlags(ev, flags)
             CGEventPost(kCGHIDEventTap, ev)
             time.sleep(0.002)
 
@@ -40,35 +43,65 @@ class Keys:
         for c in text:
             self._tap(0, c)
 
-    def key(self, code):
-        self._tap(code)
+    def key(self, code, cmd=False):
+        self._tap(code, flags=kCGEventFlagMaskCommand if cmd else 0)
 
 
-def type_text(text, wpm, jitter, typo_rate, stop):
+def text_actions(text):
+    """Turn plain text into an action list for run_actions."""
+    out = []
+    for ch in text:
+        out.append(("enter", None) if ch == "\n" else ("tab", None) if ch == "\t" else ("char", ch))
+    return out
+
+
+def run_actions(actions, wpm, jitter, typo_rate, stop):
+    """Perform (kind, arg) actions with human-like timing.
+
+    kinds: char, enter, tab, indent (space), indent_tab (fast),
+           clear (Cmd+Delete: delete to line start), fdel (forward delete)
+    """
     kb = Keys()
     base = 60.0 / (wpm * 5)  # seconds per character
-    for ch in text:
+
+    def pause(mult):
+        time.sleep(max(base * mult * random.uniform(1 - jitter, 1 + jitter), 0.005))
+
+    for kind, arg in actions:
         if stop["flag"] or esc_pressed():
             stop["flag"] = True
             print("\nStopped.")
             return
-        if typo_rate and ch.isalpha() and random.random() < typo_rate:
-            kb.type(random.choice("abcdefghijklmnopqrstuvwxyz"))
-            time.sleep(base * random.uniform(1.5, 3))
-            kb.key(KEY_DELETE)
-            time.sleep(base * random.uniform(0.5, 1.5))
-        if ch == "\n":
+        if kind == "char":
+            if typo_rate and arg.isalpha() and random.random() < typo_rate:
+                kb.type(random.choice("abcdefghijklmnopqrstuvwxyz"))
+                time.sleep(base * random.uniform(1.5, 3))
+                kb.key(KEY_DELETE)
+                time.sleep(base * random.uniform(0.5, 1.5))
+            kb.type(arg)
+            pause(3 if arg in ".!?" else 1.4 if arg in ",;: " else 1)
+        elif kind == "enter":
             kb.key(KEY_RETURN)
-        elif ch == "\t":
+            pause(3)
+        elif kind == "tab":
             kb.key(KEY_TAB)
-        else:
-            kb.type(ch)
-        d = base * random.uniform(1 - jitter, 1 + jitter)
-        if ch in ".!?\n":
-            d *= 3
-        elif ch in ",;: ":
-            d *= 1.4
-        time.sleep(max(d, 0.005))
+            pause(1)
+        elif kind == "indent":
+            kb.type(" ")
+            pause(0.25)
+        elif kind == "indent_tab":
+            kb.key(KEY_TAB)
+            pause(0.25)
+        elif kind == "clear":
+            kb.key(KEY_DELETE, cmd=True)
+            pause(1.5)
+        elif kind == "fdel":
+            kb.key(KEY_FWD_DELETE)
+            pause(0.5)
+
+
+def type_text(text, wpm, jitter, typo_rate, stop):
+    run_actions(text_actions(text), wpm, jitter, typo_rate, stop)
 
 
 def main():
@@ -76,6 +109,10 @@ def main():
     src = p.add_mutually_exclusive_group()
     src.add_argument("-f", "--file", help="read text from file")
     src.add_argument("-t", "--text", help="text to type")
+    p.add_argument("--code", choices=list(LANGUAGES), help="type as source code in this language (handles indentation/auto-close)")
+    p.add_argument("--no-auto-indent", action="store_true", help="code mode: editor does NOT auto-indent")
+    p.add_argument("--no-auto-close", action="store_true", help="code mode: editor does NOT auto-close brackets/quotes")
+    p.add_argument("--tabs", action="store_true", help="code mode: indent with tabs instead of spaces")
     p.add_argument("-d", "--delay", type=float, default=5, help="seconds to wait before typing (default 5)")
     p.add_argument("--wpm", type=float, default=80, help="typing speed in words/min (default 80)")
     p.add_argument("--jitter", type=float, default=0.5, help="0-1 random timing variation (default 0.5)")
@@ -97,7 +134,11 @@ def main():
         print(f"Typing in {i}... (click where the text should go; Esc aborts)", end="\r", flush=True)
         time.sleep(1)
     print(" " * 70, end="\r")
-    type_text(text, a.wpm, a.jitter, a.typos, stop)
+    if a.code:
+        actions = plan(text, LANGUAGES[a.code], not a.no_auto_indent, not a.no_auto_close, a.tabs)
+    else:
+        actions = text_actions(text)
+    run_actions(actions, a.wpm, a.jitter, a.typos, stop)
     print("Done.")
 
 
