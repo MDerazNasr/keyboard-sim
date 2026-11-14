@@ -65,3 +65,7 @@ sentinel space, Cmd+Shift+Left to select back to the line start, Backspace to de
 then types the exact indentation from the source. It doesn't guess what the editor did, so it works
 whether the editor indents, dedents (after `return`/`pass`), keeps indent on blank lines, or uses a
 different indent width. It never uses Cmd+Delete (that deletes the whole line in JetBrains IDEs).
+
+## Build a Mac app
+`./build_app.sh` builds `dist/Keyboard Sim.app` (PyInstaller; no source changes). On first use, grant the
+app **Accessibility** in System Settings → Privacy & Security (the terminal's permission doesn't carry over).
